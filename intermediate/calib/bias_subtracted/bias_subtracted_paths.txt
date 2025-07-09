@@ -1,2 +1,0 @@
-/home/jasvant/data-reduction/intermediate/calib/bias_subtracted/bias_sub_Calib-UAr-20s_HD61421_RedCD-FilterIn_20s_HWPPosition-67pt5_EncVal-4725pt18_4.fits
-/home/jasvant/data-reduction/intermediate/calib/bias_subtracted/bias_sub_Calib-Hal-60s_HD61421_RedCD-FilterIn_20s_HWPPosition-67pt5_EncVal-4725pt18_4.fits

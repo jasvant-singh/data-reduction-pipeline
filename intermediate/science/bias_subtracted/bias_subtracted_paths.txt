@@ -1,4 +1,0 @@
-/home/jasvant/data-reduction/intermediate/science/bias_subtracted/bias_sub_HD61421_RedCD-FilterIn_20s_HWPPosition-45_EncVal-3149pt91_3.fits
-/home/jasvant/data-reduction/intermediate/science/bias_subtracted/bias_sub_HD61421_RedCD-FilterIn_20s_HWPPosition-67pt5_EncVal-4725pt18_4.fits
-/home/jasvant/data-reduction/intermediate/science/bias_subtracted/bias_sub_HD61421_RedCD-FilterIn_20s_HWPPosition-0_EncVal-0pt63_1.fits
-/home/jasvant/data-reduction/intermediate/science/bias_subtracted/bias_sub_HD61421_RedCD-FilterIn_20s_HWPPosition-22pt5_EncVal-1574pt82_2.fits
