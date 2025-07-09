@@ -1,0 +1,1 @@
+/home/jasvant/data-reduction/intermediate/dark/bias_subtracted/bias_sub_Dark_600s_50KHz_1fr.fits

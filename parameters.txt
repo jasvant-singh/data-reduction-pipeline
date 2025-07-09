@@ -1,0 +1,7 @@
+starting_order = 27
+number_of_peaks = 42
+plot_flag = 1
+sigma_FWHM = 1.1
+detector_pixels = 1024
+centre_column_median =3
+CCD_gain = 5.5

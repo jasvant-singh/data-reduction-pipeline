@@ -1,0 +1,4 @@
+/home/jasvant/data-reduction/intermediate/sky/bias_subtracted/bias_sub_Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-45_EncVal-3150pt0_3.fits
+/home/jasvant/data-reduction/intermediate/sky/bias_subtracted/bias_sub_Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-67pt5_EncVal-4725pt45_4.fits
+/home/jasvant/data-reduction/intermediate/sky/bias_subtracted/bias_sub_Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-0_EncVal-0pt45_1.fits
+/home/jasvant/data-reduction/intermediate/sky/bias_subtracted/bias_sub_Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-22pt5_EncVal-1574pt64_2.fits
