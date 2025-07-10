@@ -7,7 +7,7 @@ import random
 import statistics
 from statistics import mode
 import os
-import lacosmic
+import astroscrappy
 import itertools
 #from scipy.interpolate import interp2d
 #from shapely.geometry import LineString
@@ -33,6 +33,7 @@ import bisect
 import warnings
 from specutils.spectra import Spectrum1D, SpectralRegion
 from specutils.fitting import fit_generic_continuum
+import re
 warnings.filterwarnings('ignore')
 
 
@@ -57,8 +58,6 @@ manual_22pt5_67pt5_spectral_shift_condition = False
 manual_22pt5_67pt5_spectral_shift = 2
 
 
-science_frame_starting_order = 28
-science_frame_NumberOfPeaks = 42
 
 def load_parameters(param_file):
     params = {}
@@ -81,6 +80,76 @@ def load_parameters(param_file):
     return params['starting_order'], params['number_of_peaks'], params['plot_flag'], params['sigma_FWHM'], params['detector_pixels'], params['centre_column_median']
 
 
+
+
+def extract_hwp_serial(file_path):
+    """
+    Extracts the HWPPosition from filename and returns a corresponding serial number.
+    HWP 0 → 1, 22.5 → 2, 45 → 3, 67.5 → 4
+    """
+    match = re.search(r'HWPPosition-([0-9]?)', file_path)
+    if not match:
+        return 1  # default to 0° → serial 1
+
+    hwp_str = match.group(1)
+    hwp_map = {
+        "0": 1,
+        "2": 2,
+        "4": 3,
+        "6": 4
+    }
+    return hwp_map.get(hwp_str, 1)  # default to 1 if unrecognized
+
+
+
+def load_traced_orders_from_txt(directory):
+    """
+    Load traced order files from a directory.
+
+    Returns:
+    - orders: list of order numbers (int)
+    - peaks: list of central peak positions (int)
+    - xcor: list of X coordinate arrays (np.array)
+    - ycor: list of Y coordinate arrays (np.array)
+    """
+    orders = []
+    peaks = []
+    xcor = []
+    ycor = []
+
+    for file in sorted(os.listdir(directory)):
+        if not file.startswith("order_") or not file.endswith(".txt"):
+            continue
+
+        filepath = os.path.join(directory, file)
+        match = re.match(r"order_(\d+)_([oe])\.txt", file)
+        if not match:
+            continue
+
+        order = int(match.group(1))
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+            peak_line = lines[0].strip()
+            peak = int(peak_line.split(":")[1])
+            xs, ys = [], []
+            for line in lines[2:]:
+                if line.strip() == "":
+                    continue
+                x, y = map(int, line.strip().split())
+                xs.append(x)
+                ys.append(y)
+
+        orders.append(order)
+        peaks.append(peak)
+        xcor.append(np.array(xs))
+        ycor.append(np.array(ys))
+
+    return orders, peaks, xcor, ycor
+
+
+
+
+
 def find_pixel_shift(spec1, spec2):
     # Normalize spectra
     spec1_normalized = (spec1 - np.mean(spec1)) / np.std(spec1)
@@ -93,251 +162,6 @@ def find_pixel_shift(spec1, spec2):
     shift = np.argmax(correlation) - len(spec1) + 1
     
     return shift
-
-
-
-def Star_FWHM_Determination (science_frame_Fits, start_order, NumberOfPeaks):
-    
-    #CCD_gain = 5.5
-    
-    starting_order = start_order
-
-    CD_peaks = NumberOfPeaks 
-    
-    science_frame_41 = science_frame_Fits
-
-    science_frame_41 = np.rot90(science_frame_41)
-
-    x_new = np.linspace(0, detector_pixels-1, detector_pixels)
-    x_new = x_new.astype(int)
-
-    ###################################################  Peak Detection  #################################################################
-
-    N = 10    # No. of centre columns to median combine for peak detectection
-    master_peak = []
-    for i in range(len(science_frame_41)):
-        column_trace1 = np.zeros((N))
-        for j in range (int(len(science_frame_41)/2 - (N/2)), int(len(science_frame_41)/2 + (N/2))):
-            column_trace1[j - int(len(science_frame_41)/2 - (N/2))] = science_frame_41[i][j]  
-        master_peak.append(np.median(column_trace1))
-
-    master_peak = np.array(master_peak)    
-
-    sigma_FWHM = 1.1
-    kernel = Gaussian1DKernel(stddev = sigma_FWHM)
-    master_peak = convolve(master_peak, kernel)
-
-
-    def func(x, *params):
-        y = np.zeros_like(x)
-        for i in range(0, len(params), 3):
-            ctr = params[i]
-            amp = params[i+1]
-            wid = params[i+2]
-            y = y + amp * np.exp( -((x - ctr)/wid)**2)
-        return y
-
-
-    def sumOfSquaredError(parameterTuple):
-        warnings.filterwarnings("ignore") # do not print warnings by genetic algorithm
-        val = func(x_new, *parameterTuple)
-        return np.sum((master_peak - val) ** 2.0)
-
-    def generate_Initial_Parameters(x, y):
-        # min and max used for bounds
-        maxX = max(x)
-        maxY = max(y)
-        maxXY = max(maxX, maxY)
-
-        parameterBounds = []
-        parameterBounds.append([-maxXY, maxXY]) # seach bounds for a
-        parameterBounds.append([-maxXY, maxXY]) # seach bounds for b
-        parameterBounds.append([-maxXY, maxXY]) # seach bounds for c
-
-        # "seed" the numpy random number generator for repeatable results
-        result = differential_evolution(sumOfSquaredError, parameterBounds, seed=3)
-        return result.x
-
-    # generate initial parameter values
-    geneticParameters = generate_Initial_Parameters(x_new, master_peak)
-
-    # curve fit the test data
-    popt, pcov = curve_fit(func, x_new, master_peak, geneticParameters)
-    popt = np.abs(popt)
-    #area_gauss = popt[1] * (popt[2]/(1/np.sqrt(2 * np.pi)))
-    #fit = func(x_new, *popt)
-    #fit = np.abs(fit)
-    #print(fit)
-    #print(popt[0])
-    #print("Integrated flux along CD: " + str(area_gauss))
-    #plt.plot(x_new, master_peak)
-    #plt.plot(x_new, fit , 'r-')
-    #plt.show()
-
-
-
-    spectrum = Spectrum1D(flux=master_peak*unit.Jy, spectral_axis=x_new*unit.pix)
-
-    with warnings.catch_warnings():  # Ignore warnings
-        warnings.simplefilter('ignore')
-        g1_fit = fit_generic_continuum(spectrum)
-        
-    y_continuum_fitted = g1_fit(x_new*unit.pix)
-    y_continuum_fitted = np.array(y_continuum_fitted)
-    #f, ax = plt.subplots()  
-    #ax.plot(x_new, master_peak)  
-    #ax.plot(x_new, y_continuum_fitted)  
-    #ax.set_title("Continuum Fitting")  
-    #ax.grid(True)
-
-
-    peaks, _ = find_peaks(master_peak, height=y_continuum_fitted)
-    #peak_flux = master_peak[peaks]
-    #print(peak_flux)
-    #min_peak_flux = min(peak_flux)
-    #min_peak_flux_pixel = np.where(peak_flux == min_peak_flux)
-
-    #print(peaks)
-
-    continuum_points = []
-    continuum_flux_points = []
-    for i in range (1, len(peaks)):
-        #if peaks[i] - peaks[i-1]!= 13 or peaks[i] - peaks[i-1]!= 14 or peaks[i] - peaks[i-1]!= 15:
-        if peaks[i] - peaks[i-1] <= 13:
-            continue
-        else:
-            continuum_points.append(peaks[i-1] + int((peaks[i] - peaks[i-1])/2))
-            continuum_flux_points.append(master_peak[peaks[i-1] + int((peaks[i] - peaks[i-1])/2)])
-
-    continuum_points = np.array(continuum_points)
-    continuum_flux_points = np.array(continuum_flux_points)
-
-    continuum_fit = interp1d(continuum_points, continuum_flux_points, kind = 'quadratic', bounds_error = False, fill_value="extrapolate")
-    continuum = continuum_fit(x_new)
-
-    #continumm_flux_at_min_peak_flux = continuum[min_peak_flux_pixel]
-    #continuum = continuum + int((min_peak_flux - continumm_flux_at_min_peak_flux)/2)
-        
-    #print(continuum_points)
-    #print(continuum_flux_points)
-
-    """
-    spectrum = Spectrum1D(flux=continuum*u.Jy, spectral_axis=x_new*u.pix)
-
-    with warnings.catch_warnings():  # Ignore warnings
-        warnings.simplefilter('ignore')
-        g1_fit = fit_generic_continuum(spectrum)
-        
-    y_continuum_fitted = g1_fit(x_new*u.pix)
-    y_continuum_fitted = np.array(y_continuum_fitted)
-    """
-    #plt.plot(x_new, continuum)
-    #plt.plot(x_new, y_continuum_fitted)
-    #plt.scatter(continuum_points, continuum_flux_points, s=15, color = 'black')
-    #plt.show()
-
-    peaks, _ = find_peaks(master_peak, height=continuum)
-
-
-    fit_offset = 0
-    #redCD_peaks = 42  #  redCD_peaks = 46 for observations taken with 1.2m telescope; redCD_peaks = 42 for observations taken with 2.5m telescope
-    while len(peaks) >= CD_peaks:
-        fit_offset = fit_offset + 0.1
-        for i in range (len(continuum)):
-            continuum[i] = continuum[i] + fit_offset
-        peaks, _ = find_peaks(master_peak, height=continuum)
-
-
-    #peaks2 = []
-    #for i in range (len(peaks)):
-    #    if peaks[i] >= 15 and peaks[i] <= 1009:
-    #       peaks2.append(peaks[i])
-
-    #peaks = np.array(peaks2)
-    #print(fit_offset)
-    #print(peaks)
-    #print(len(peaks))
-    #plt.plot(master_peak)
-    #plt.plot(peaks, master_peak[peaks], "x")
-    #plt.scatter(continuum_points, continuum[continuum_points], "o")
-    #plt.plot(x_new, continuum , "--", color="red")
-    #plt.savefig("Peak_Detection_Halogen_20240310.pdf", format="pdf", bbox_inches="tight")
-    #plt.show()
-
-    peaks = list(peaks)
-    
-    if peaks[len(peaks)-1] >= (detector_pixels - 60):
-        peaks.pop(len(peaks)-1)
-
-    if peaks[0] <= 10:
-        peaks.pop(0)
-    
-    if (peaks[len(peaks)-1] - peaks[len(peaks)-2]) != 13 and (peaks[len(peaks)-1] - peaks[len(peaks)-2]) != 14 and (peaks[len(peaks)-1] - peaks[len(peaks)-2]) != 15 and (peaks[len(peaks)-1] - peaks[len(peaks)-2]) != 16:
-        peaks.pop(len(peaks)-1)
-        
-    if len(peaks)%2 == 1:
-        peaks.pop(0)
-        
-    peaks = np.array(peaks)
-
-    starting_order = 28
-    orders = np.zeros((len(peaks)))
-    k = 0
-    for i in range (len(peaks)-1, -1, -2):
-        orders[i] = starting_order + k
-        orders[i-1] = starting_order + k
-        k = k + 1
-
-
-    #################################################    Order Trace   ############################################################################
-
-
-    def guess_gaussian_params(x, y):
-        
-        #Guess the initial parameters for a Gaussian fit to the data (x, y).
-        
-        mean = np.mean(x)
-        stddev = np.std(x)
-        amplitude = np.max(y)
-        return [amplitude, mean, stddev]
-
-    def gaussian(x, A, x0, sigma):
-        return A * np.exp(-((x - x0) ** 2) / (2 * sigma ** 2))
-
-
-
-
-    for i in range (int(len(peaks)/2), int(len(peaks)/2)+1):    #  Determinaion of FWHM in Cross-Dispersion Direction
-        peaks1 = peaks[i]
-
-        for j in range (int(len(science_frame_41)/2), int(len(science_frame_41)/2)-1, -1):
-            try:
-                cd_pixel = []
-                cd_flux = []
-                for k in range (-int(3*sigma_FWHM), int(3*sigma_FWHM)+1):
-                    cd_flux.append(science_frame_41[peaks1+k][j])
-                    cd_pixel.append((peaks1+k))
-            #y.append(sum2)
-                cd_pixel = np.array(cd_pixel)
-                cd_flux = np.array(cd_flux)
-            #d = np.linspace(peaks1, peaks1 + 1, 1)
-            #d[0] = int(d[0])
-            #geneticParameters = generate_Initial_Parameters(cd, d)
-            # curve fit the test data
-            #popt, pcov = curve_fit(func, cd, d, geneticParameters)
-            #popt = np.abs(popt)
-            #order_peaks.append(int(popt[0]))
-            #peaks1 = int(popt[0])
-                init_param = guess_gaussian_params(cd_pixel, cd_flux)
-                popt, pcov = curve_fit(gaussian, cd_pixel, cd_flux, init_param)
-                
-            except:
-                break
-            
-            #print(popt[1])
-            sigma_FWHM = popt[2]
-            
-    return sigma_FWHM
 
 
 
@@ -391,16 +215,78 @@ def OrderExtraction (science_frame_fits, sky_frame_fits, x_trace, y_trace, sigma
 
 ###########  Input all sciencee (bias, scattered light, etc. substracted) and sky (bias substracted) fits files  ###############
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+project_root = os.path.dirname(script_dir)
+
+param_file = f'{project_root}/parameters.txt' 
+
+starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+
+science_frame_starting_order = starting_order
+science_frame_NumberOfPeaks = NumberOfPeaks
+sigma_FWHM = CD_sigma_FWHM
 
 
+science_frame_path = f'{project_root}/intermediate/science/HD61421_RedCD-FilterIn_20s_HWPPosition-0_EncVal-0pt63_1.fits'
+sky_frame_path = f'{project_root}/intermediate/sky/Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-0_EncVal-0pt45_1.fits'
 
+# --- Step 1: Load Science Frames ---
 
+science_frame_41_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_1.fits'
+science_frame_42_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_2.fits'
+science_frame_43_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_3.fits'
+science_frame_44_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_4.fits'
 
+def load_valid_image(path):
+    with fits.open(path) as hdul:
+        for hdu in hdul:
+            if hdu.data is not None and hdu.data.ndim == 2:
+                return hdu.data
+        raise ValueError(f"No valid 2D image data found in {path}")
 
+science_frame_41 = load_valid_image(science_frame_41_path)
+science_frame_42 = load_valid_image(science_frame_42_path)
+science_frame_43 = load_valid_image(science_frame_43_path)
+science_frame_44 = load_valid_image(science_frame_44_path)
 
+# --- Step 2: Load Sky Frames from File List ---
+with open(f'{project_root}/intermediate/sky/bias_subtracted/bias_subtracted_paths.txt', "r") as f:
+    sky_frame_paths = [line.strip() for line in f if line.strip()]
 
-science_frame_path = science_frame_path_2   # Add correct path
-sky_frame_path = sky_22pt5_path
+# Dictionary to store data cubes by HWP serial
+sky_data_cubes = {}
+
+for file_path in sky_frame_paths:
+    # ~ print(f"Processing file: {file_path}")
+    hwp_serial = extract_hwp_serial(file_path)
+
+    # Load FITS data
+    data_cube = fits.getdata(file_path)
+    sky_data_cubes[hwp_serial] = data_cube
+
+sky_0_cube = sky_data_cubes[1]
+sky_0 = sky_0_cube[0][:][:]
+
+sky_22pt5_cube = sky_data_cubes[2]
+sky_22pt5 = sky_22pt5_cube[0][:][:]
+
+sky_45_cube = sky_data_cubes[3]
+sky_45 = sky_45_cube[0][:][:]
+
+sky_67pt5_cube = sky_data_cubes[4]
+sky_67pt5 = sky_67pt5_cube[0][:][:]
+
+# Ensure all frames are valid before proceeding
+for hwp, frame in zip([0, 22.5, 45, 67.5], [sky_0, sky_22pt5, sky_45, sky_67pt5]):
+    if frame is None:
+        raise RuntimeError(f"Sky frame for HWP {hwp} not loaded properly.")
+        
+        
+        
+        
+        
+        
 
 with fits.open(science_frame_path) as hdul:
     # Get the header of the primary HDU (Header/Data Unit)
@@ -422,15 +308,16 @@ science_sky_scale_factor = science_frame_exposure/sky_frame_exposure
 
 
 
-sigma_FWHM = Star_FWHM_Determination(science_frame_42, science_frame_starting_order, science_frame_NumberOfPeaks)
 
 
 
-orders_41, peaks_41, xcor_41, ycor_41 = OrderTrace(science_frame_41, science_frame_starting_order, science_frame_NumberOfPeaks)   #  Load from text file
-orders_42, peaks_42, xcor_42, ycor_42 = OrderTrace(science_frame_42, science_frame_starting_order, science_frame_NumberOfPeaks)     
-orders_43, peaks_43, xcor_43, ycor_43 = OrderTrace(science_frame_43, science_frame_starting_order, science_frame_NumberOfPeaks)
-orders_44, peaks_44, xcor_44, ycor_44 = OrderTrace(science_frame_44, science_frame_starting_order, science_frame_NumberOfPeaks)
 
+traced_dir = f'{project_root}/intermediate/science/traced_orders'  # <-- Change this path
+
+orders_41, peaks_41, xcor_41, ycor_41 = load_traced_orders_from_txt(f'{traced_dir}/1')   #  Load from text file
+orders_42, peaks_42, xcor_42, ycor_42 = load_traced_orders_from_txt(f'{traced_dir}/2')     
+orders_43, peaks_43, xcor_43, ycor_43 = load_traced_orders_from_txt(f'{traced_dir}/3')
+orders_44, peaks_44, xcor_44, ycor_44 = load_traced_orders_from_txt(f'{traced_dir}/4')
 
 
 len_order = [len(orders_41), len(orders_42), len(orders_43), len(orders_44)]
@@ -1136,15 +1023,13 @@ for i in range (int(len(orders_41)/2)):
     
     
 
-path = 'C:\\Users\\Mudit Shrivastav\\.ipython\\Science_spectra\\' + observation_session + "\\" + star_name
-
-if not os.path.exists(path):
-    os.mkdir(path)
+path = f"{project_root}/output/{observation_session}/{star_name}"
+os.makedirs(path, exist_ok=True)
 
 if grating_choice == 1:
-    path = path + '\\RedCD\\'
+    path = path + '/RedCD/'
 elif grating_choice == 2:
-    path = path + '\\BlueCD\\'
+    path = path + '/BlueCD/'
 
 if not os.path.exists(path):
     os.mkdir(path)
@@ -1179,7 +1064,6 @@ for i in range (int(len(orders_41)/2)):
     a['I_67pt5_o_err'] = I_67pt5_o_err[i]
     a['I_67pt5_e_err'] = I_67pt5_e_err[i]
     #np.savetxt('C:\\Users\\Mudit Shrivastav\\.ipython\\Science_spectra\\BetUMa\\BetUMa_9_IntensityTestBeforeEffCorr.txt', a, '%.5f', delimiter = ',')
-    np.savetxt(path + '\\' + star_name + '_' + set_number + '_Order-' + str(order_number) +'_IntensityBeforeEffCorr.txt', a, '%.3f', delimiter = '    ')
-
-
-starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+    filename = f"{star_name}_{set_number}_Order-{order_number}_IntensityBeforeEffCorr.txt"
+    output_path = os.path.join(path, filename)
+    np.savetxt(output_path, a, fmt='%.3f', delimiter='    ')
