@@ -48,11 +48,40 @@ def load_parameters(param_file):
     params = {}
     with open(param_file, 'r') as f:
         for line in f:
+            line = line.strip()
+            
+            # Skip empty lines and full-line comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Split only once on '=', rest of the line could be a comment
             if '=' in line:
-                key, val = line.strip().split('=')
-                params[key.strip()] = float(val.strip())
-    return params['starting_order'], params['number_of_peaks'], params['plot_flag']
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip()
 
+                # Remove inline comments (e.g., 1  # comment)
+                if '#' in val:
+                    val = val.split('#')[0].strip()
+
+                # Convert value to bool, int, float or str
+                if val.lower() == 'true':
+                    val = True
+                elif val.lower() == 'false':
+                    val = False
+                else:
+                    try:
+                        if '.' in val:
+                            val = float(val)
+                        else:
+                            val = int(val)
+                    except ValueError:
+                        # Remove quotes if present
+                        val = val.strip('"').strip("'")
+
+                params[key] = val
+
+    return params
 
 def extract_hwp_serial(file_path):
     """
@@ -376,7 +405,13 @@ input_path = f'{project_root}/intermediate/science'
 output_path = os.path.join(input_path, 'central_peak_detection/')
 os.makedirs(output_path, exist_ok=True)
 
-starting_order, NumberOfPeaks, plot_flag = load_parameters(param_file)
+# ~ starting_order, NumberOfPeaks, plot_flag = load_parameters(param_file)
+parameters = load_parameters(param_file)
+starting_order = parameters['starting_order']
+NumberOfPeaks = parameters['number_of_peaks']
+plot_flag = parameters['plot_flag']
+
+
 
 def read_file_paths(txt_file):
     with open(txt_file, 'r') as f:

@@ -1,17 +1,44 @@
 import os
-from astropy.io import fits
-import numpy as np
 
+def load_parameters(param_file):
+    params = {}
+    with open(param_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue  # skip comments and blank lines
+            if '=' in line:
+                key, val = line.split('=')
+                key = key.strip()
+                val = val.strip()
+
+                # Type inference
+                if val.lower() in ['true', 'false']:
+                    val = val.lower() == 'true'
+                else:
+                    try:
+                        if '.' in val:
+                            val = float(val)
+                        else:
+                            val = int(val)
+                    except ValueError:
+                        pass  # keep as string if not a number
+
+                params[key] = val
+
+    return params
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Go one level up: 
 project_root = os.path.dirname(script_dir)
-output_path_dir = f'{project_root}/intermediate/science/scattered_light_substraction'
 
-data1 = fits.getdata(f'{output_path_dir}/science_bias_scattered_light_subtracted_1.fits')
-data2 = fits.getdata(f'{output_path_dir}/science_bias_scattered_light_subtracted_4.fits')
 
-same = np.array_equal(data1, data2)
-print("Image data is the same." if same else "Image data is different.")
+param_file = f'{project_root}/parameters.txt' 
 
+params = load_parameters(param_file)
+starting_order = params['starting_order']
+NumberOfPeaks = params['number_of_peaks']
+plot_flag = params['plot_flag']
+CD_sigma_FWHM = params['sigma_FWHM']
+detector_pixels = params['detector_pixels']
+centre_column_median = params['centre_column_median']
