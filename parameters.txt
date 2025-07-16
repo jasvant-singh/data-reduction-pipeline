@@ -1,7 +1,46 @@
-starting_order = 27
-number_of_peaks = 42
-plot_flag = 1
-sigma_FWHM = 1.1
+# -----------------------------
+# Observation Information
+# -----------------------------
+star_name = YGem
+set_number = Set_1 #######Set_2 erliar
+standard_star_name = HR8634
+observation_session = 2024-2025
+
+# -----------------------------
+# Instrument Settings
+# -----------------------------
+grating_choice = 1                 # 1 = Red Grating; 2 = Blue Grating
 detector_pixels = 1024
-centre_column_median =3
+centre_column_median = 3
 CCD_gain = 5.5
+
+# -----------------------------
+# Order Tracing Parameters
+# -----------------------------
+starting_order = 28               # Starting order number
+number_of_peaks = 41              # Number of peak positions to trace
+plot_flag = 0                     # 1 = plot tracing, 0 = no plot
+sigma_FWHM = 1.1                  # FWHM sigma for Gaussian fitting
+IsTraceFrameAvailable = 0         # 0 = No halogen; 1 = Halogen available
+NumberOfCalibFrames = 1
+
+# -----------------------------
+# Intensity Smoothing
+# -----------------------------
+median_smoothening_pixels = 0     # Rolling median window for Stokes calculation
+
+# -----------------------------
+# Manual Spectral Shift Settings
+# -----------------------------
+manual_oe_spectral_shift_condition = False
+manual_oe_spectral_shift = -1
+
+manual_0_22pt5_spectral_shift_condition = False
+manual_0_22pt5_spectral_shift = 1
+
+manual_45_67pt5_spectral_shift_condition = False
+manual_45_67pt5_spectral_shift = 1
+
+manual_22pt5_67pt5_spectral_shift_condition = False
+manual_22pt5_67pt5_spectral_shift = 2
+
