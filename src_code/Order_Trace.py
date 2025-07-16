@@ -37,25 +37,45 @@ warnings.filterwarnings('ignore')
 
 
 
+
 def load_parameters(param_file):
     params = {}
     with open(param_file, 'r') as f:
         for line in f:
             line = line.strip()
-            if line.startswith('#'):
-                continue  # skip comments
+            
+            # Skip empty lines and full-line comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Split only once on '=', rest of the line could be a comment
             if '=' in line:
-                key, val = line.split('=')
+                key, val = line.split('=', 1)
                 key = key.strip()
                 val = val.strip()
-                # Convert value to int or float
-                if '.' in val:
-                    val = float(val)
+
+                # Remove inline comments (e.g., 1  # comment)
+                if '#' in val:
+                    val = val.split('#')[0].strip()
+
+                # Convert value to bool, int, float or str
+                if val.lower() == 'true':
+                    val = True
+                elif val.lower() == 'false':
+                    val = False
                 else:
-                    val = int(val)
+                    try:
+                        if '.' in val:
+                            val = float(val)
+                        else:
+                            val = int(val)
+                    except ValueError:
+                        # Remove quotes if present
+                        val = val.strip('"').strip("'")
+
                 params[key] = val
-                
-    return params['starting_order'], params['number_of_peaks'], params['plot_flag'], params['sigma_FWHM'], params['detector_pixels'], params['centre_column_median']
+
+    return params
 
 def extract_hwp_serial(file_path):
     """
@@ -568,7 +588,15 @@ project_root = os.path.dirname(script_dir)
 
 param_file = f'{project_root}/parameters.txt' 
 
-starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+# ~ starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+parameters = load_parameters(param_file)
+starting_order = parameters['starting_order']
+NumberOfPeaks = parameters['number_of_peaks']
+plot_flag = parameters['plot_flag']
+CD_sigma_FWHM = parameters['sigma_FWHM']
+detector_pixels = parameters['detector_pixels']
+centre_column_median = parameters['centre_column_median']
+
 
 # ~ print(starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median)
 
