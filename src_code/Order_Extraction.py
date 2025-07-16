@@ -7,7 +7,7 @@ import random
 import statistics
 from statistics import mode
 import os
-import lacosmic
+import astroscrappy
 import itertools
 #from scipy.interpolate import interp2d
 #from shapely.geometry import LineString
@@ -33,67 +33,67 @@ import bisect
 import warnings
 from specutils.spectra import Spectrum1D, SpectralRegion
 from specutils.fitting import fit_generic_continuum
+import re
 warnings.filterwarnings('ignore')
 
 
-
-detector_pixels = 1024
-CCD_gain = 5.5
-
-star_name = 'YGem'
-set_number = 'Set_1'
-observation_session = '2024-2025'
-
-grating_choice = 1  #  Choose 1 for Red Grating; Choose 2 for Blue Grating
-
-manual_oe_spectral_shift_condition = False
-manual_oe_spectral_shift = -1
-
-manual_0_22pt5_spectral_shift_condition = False
-manual_0_22pt5_spectral_shift = 1                   # Use +ve value of spectral shift if HWP-0 wavelength value is less than HWP-22pt5 wavelength values and vice-versa 
-manual_45_67pt5_spectral_shift_condition = False
-manual_45_67pt5_spectral_shift = 1
-manual_22pt5_67pt5_spectral_shift_condition = False
-manual_22pt5_67pt5_spectral_shift = 2
-
-
-science_frame_starting_order = 28
-science_frame_NumberOfPeaks = 42
 
 def load_parameters(param_file):
     params = {}
     with open(param_file, 'r') as f:
         for line in f:
             line = line.strip()
-            if line.startswith('#'):
-                continue  # skip comments
+            
+            # Skip empty lines and full-line comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Split only once on '=', rest of the line could be a comment
             if '=' in line:
-                key, val = line.split('=')
+                key, val = line.split('=', 1)
                 key = key.strip()
                 val = val.strip()
-                # Convert value to int or float
-                if '.' in val:
-                    val = float(val)
+
+                # Remove inline comments (e.g., 1  # comment)
+                if '#' in val:
+                    val = val.split('#')[0].strip()
+
+                # Convert value to bool, int, float or str
+                if val.lower() == 'true':
+                    val = True
+                elif val.lower() == 'false':
+                    val = False
                 else:
-                    val = int(val)
+                    try:
+                        if '.' in val:
+                            val = float(val)
+                        else:
+                            val = int(val)
+                    except ValueError:
+                        # Remove quotes if present
+                        val = val.strip('"').strip("'")
+
                 params[key] = val
-                
-    return params['starting_order'], params['number_of_peaks'], params['plot_flag'], params['sigma_FWHM'], params['detector_pixels'], params['centre_column_median']
 
+    return params
 
-def find_pixel_shift(spec1, spec2):
-    # Normalize spectra
-    spec1_normalized = (spec1 - np.mean(spec1)) / np.std(spec1)
-    spec2_normalized = (spec2 - np.mean(spec2)) / np.std(spec2)
-    #spec1_normalized = spec1
-    #spec2_normalized = spec2
-    # Perform cross-correlation
-    correlation = correlate(spec1_normalized, spec2_normalized, mode='full')
-    # Find shift that maximizes correlation
-    shift = np.argmax(correlation) - len(spec1) + 1
-    
-    return shift
+def extract_hwp_serial(file_path):
+    """
+    Extracts the HWPPosition from filename and returns a corresponding serial number.
+    HWP 0 → 1, 22.5 → 2, 45 → 3, 67.5 → 4
+    """
+    match = re.search(r'HWPPosition-([0-9]?)', file_path)
+    if not match:
+        return 1  # default to 0° → serial 1
 
+    hwp_str = match.group(1)
+    hwp_map = {
+        "0": 1,
+        "2": 2,
+        "4": 3,
+        "6": 4
+    }
+    return hwp_map.get(hwp_str, 1)  # default to 1 if unrecognized
 
 
 def Star_FWHM_Determination (science_frame_Fits, start_order, NumberOfPeaks):
@@ -123,7 +123,7 @@ def Star_FWHM_Determination (science_frame_Fits, start_order, NumberOfPeaks):
 
     master_peak = np.array(master_peak)    
 
-    sigma_FWHM = 1.1
+    sigma_FWHM = 1.1############################################################################################
     kernel = Gaussian1DKernel(stddev = sigma_FWHM)
     master_peak = convolve(master_peak, kernel)
 
@@ -341,6 +341,69 @@ def Star_FWHM_Determination (science_frame_Fits, start_order, NumberOfPeaks):
 
 
 
+def load_traced_orders_from_txt(directory):
+    """
+    Load traced order files from a directory.
+
+    Returns:
+    - orders: list of order numbers (int)
+    - peaks: list of central peak positions (int)
+    - xcor: list of X coordinate arrays (np.array)
+    - ycor: list of Y coordinate arrays (np.array)
+    """
+    orders = []
+    peaks = []
+    xcor = []
+    ycor = []
+
+    for file in sorted(os.listdir(directory)):
+        if not file.startswith("order_") or not file.endswith(".txt"):
+            continue
+
+        filepath = os.path.join(directory, file)
+        match = re.match(r"order_(\d+)_([oe])\.txt", file)
+        if not match:
+            continue
+
+        order = int(match.group(1))
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+            peak_line = lines[0].strip()
+            peak = int(peak_line.split(":")[1])
+            xs, ys = [], []
+            for line in lines[2:]:
+                if line.strip() == "":
+                    continue
+                x, y = map(int, line.strip().split())
+                xs.append(x)
+                ys.append(y)
+
+        orders.append(order)
+        peaks.append(peak)
+        xcor.append(np.array(xs))
+        ycor.append(np.array(ys))
+
+    return orders, peaks, xcor, ycor
+
+
+
+
+
+def find_pixel_shift(spec1, spec2):
+    # Normalize spectra
+    spec1_normalized = (spec1 - np.mean(spec1)) / np.std(spec1)
+    spec2_normalized = (spec2 - np.mean(spec2)) / np.std(spec2)
+    #spec1_normalized = spec1
+    #spec2_normalized = spec2
+    # Perform cross-correlation
+    correlation = correlate(spec1_normalized, spec2_normalized, mode='full')
+    # Find shift that maximizes correlation
+    shift = np.argmax(correlation) - len(spec1) + 1
+    
+    return shift
+
+
+
 
 def OrderExtraction (science_frame_fits, sky_frame_fits, x_trace, y_trace, sigma_FWHM, sky_scale_factor):
     
@@ -391,16 +454,113 @@ def OrderExtraction (science_frame_fits, sky_frame_fits, x_trace, y_trace, sigma
 
 ###########  Input all sciencee (bias, scattered light, etc. substracted) and sky (bias substracted) fits files  ###############
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+project_root = os.path.dirname(script_dir)
+
+param_file = f'{project_root}/parameters.txt' 
+
+# ~ starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+parameters = load_parameters(param_file)
 
 
 
+centre_column_median = parameters['centre_column_median']
+CCD_gain = parameters['CCD_gain']
+detector_pixels = parameters['detector_pixels']
+
+star_name = parameters['star_name']
+set_number = parameters['set_number']
+standard_star_name = parameters['standard_star_name']
+observation_session = parameters['observation_session']
+
+grating_choice = parameters['grating_choice']
+
+starting_order = parameters['starting_order']
+
+NumberOfPeaks = parameters['number_of_peaks']
+
+plot_flag = parameters['plot_flag']
+
+# ~ CD_sigma_FWHM = parameters['sigma_FWHM']
+
+manual_oe_spectral_shift_condition = parameters['manual_oe_spectral_shift_condition']
+manual_oe_spectral_shift = parameters['manual_oe_spectral_shift']
+
+manual_0_22pt5_spectral_shift_condition = parameters['manual_0_22pt5_spectral_shift_condition']
+manual_0_22pt5_spectral_shift = parameters['manual_0_22pt5_spectral_shift']
+
+manual_45_67pt5_spectral_shift_condition = parameters['manual_45_67pt5_spectral_shift_condition']
+manual_45_67pt5_spectral_shift = parameters['manual_45_67pt5_spectral_shift']
+
+manual_22pt5_67pt5_spectral_shift_condition = parameters['manual_22pt5_67pt5_spectral_shift_condition']
+manual_22pt5_67pt5_spectral_shift = parameters['manual_22pt5_67pt5_spectral_shift']
 
 
+science_frame_starting_order = starting_order
+science_frame_NumberOfPeaks = NumberOfPeaks
+# ~ sigma_FWHM = CD_sigma_FWHM
 
 
+science_frame_path = f'{project_root}/intermediate/science/HD61421_RedCD-FilterIn_20s_HWPPosition-0_EncVal-0pt63_1.fits'
+sky_frame_path = f'{project_root}/intermediate/sky/Sky_HD61421_RedCD-FilterIn_300s_HWPPosition-0_EncVal-0pt45_1.fits'
 
-science_frame_path = science_frame_path_2   # Add correct path
-sky_frame_path = sky_22pt5_path
+# --- Step 1: Load Science Frames ---
+
+science_frame_41_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_1.fits'
+science_frame_42_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_2.fits'
+science_frame_43_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_3.fits'
+science_frame_44_path = f'{project_root}/intermediate/science/scattered_light_substraction/science_bias_scattered_light_subtracted_4.fits'
+
+# ~ def load_valid_image(path):
+    # ~ with fits.open(path) as hdul:
+        # ~ for hdu in hdul:
+            # ~ if hdu.data is not None and hdu.data.ndim == 2:
+                # ~ return hdu.data
+        # ~ raise ValueError(f"No valid 2D image data found in {path}")
+
+science_frame_41 = fits.getdata(science_frame_41_path)
+science_frame_42 = fits.getdata(science_frame_42_path)
+science_frame_43 = fits.getdata(science_frame_43_path)
+science_frame_44 = fits.getdata(science_frame_44_path)
+
+# --- Step 2: Load Sky Frames from File List ---
+with open(f'{project_root}/intermediate/sky/bias_subtracted/bias_subtracted_paths.txt', "r") as f:
+    sky_frame_paths = [line.strip() for line in f if line.strip()]
+
+# Dictionary to store data cubes by HWP serial
+sky_data_cubes = {}
+
+for file_path in sky_frame_paths:
+    # ~ print(f"Processing file: {file_path}")
+    hwp_serial = extract_hwp_serial(file_path)
+
+    # Load FITS data
+    data_cube = fits.getdata(file_path)
+    sky_data_cubes[hwp_serial] = data_cube
+
+sky_0_cube = sky_data_cubes[1]
+sky_0 = sky_0_cube[0][:][:]
+
+sky_22pt5_cube = sky_data_cubes[2]
+sky_22pt5 = sky_22pt5_cube[0][:][:]
+
+sky_45_cube = sky_data_cubes[3]
+sky_45 = sky_45_cube[0][:][:]
+
+sky_67pt5_cube = sky_data_cubes[4]
+sky_67pt5 = sky_67pt5_cube[0][:][:]
+
+# Ensure all frames are valid before proceeding
+for hwp, frame in zip([0, 22.5, 45, 67.5], [sky_0, sky_22pt5, sky_45, sky_67pt5]):
+    if frame is None:
+        raise RuntimeError(f"Sky frame for HWP {hwp} not loaded properly.")
+        
+        
+        
+        
+        
+        
 
 with fits.open(science_frame_path) as hdul:
     # Get the header of the primary HDU (Header/Data Unit)
@@ -421,16 +581,17 @@ science_sky_scale_factor = science_frame_exposure/sky_frame_exposure
 
 
 
-
 sigma_FWHM = Star_FWHM_Determination(science_frame_42, science_frame_starting_order, science_frame_NumberOfPeaks)
 
 
+print(sigma_FWHM)
 
-orders_41, peaks_41, xcor_41, ycor_41 = OrderTrace(science_frame_41, science_frame_starting_order, science_frame_NumberOfPeaks)   #  Load from text file
-orders_42, peaks_42, xcor_42, ycor_42 = OrderTrace(science_frame_42, science_frame_starting_order, science_frame_NumberOfPeaks)     
-orders_43, peaks_43, xcor_43, ycor_43 = OrderTrace(science_frame_43, science_frame_starting_order, science_frame_NumberOfPeaks)
-orders_44, peaks_44, xcor_44, ycor_44 = OrderTrace(science_frame_44, science_frame_starting_order, science_frame_NumberOfPeaks)
+traced_dir = f'{project_root}/intermediate/science/traced_orders'  # <-- Change this path
 
+orders_41, peaks_41, xcor_41, ycor_41 = load_traced_orders_from_txt(f'{traced_dir}/1')   #  Load from text file
+orders_42, peaks_42, xcor_42, ycor_42 = load_traced_orders_from_txt(f'{traced_dir}/2')     
+orders_43, peaks_43, xcor_43, ycor_43 = load_traced_orders_from_txt(f'{traced_dir}/3')
+orders_44, peaks_44, xcor_44, ycor_44 = load_traced_orders_from_txt(f'{traced_dir}/4')
 
 
 len_order = [len(orders_41), len(orders_42), len(orders_43), len(orders_44)]
@@ -1136,15 +1297,13 @@ for i in range (int(len(orders_41)/2)):
     
     
 
-path = 'C:\\Users\\Mudit Shrivastav\\.ipython\\Science_spectra\\' + observation_session + "\\" + star_name
-
-if not os.path.exists(path):
-    os.mkdir(path)
+path = f"{project_root}/output/{observation_session}/{star_name}"
+os.makedirs(path, exist_ok=True)
 
 if grating_choice == 1:
-    path = path + '\\RedCD\\'
+    path = path + '/RedCD/'
 elif grating_choice == 2:
-    path = path + '\\BlueCD\\'
+    path = path + '/BlueCD/'
 
 if not os.path.exists(path):
     os.mkdir(path)
@@ -1179,7 +1338,6 @@ for i in range (int(len(orders_41)/2)):
     a['I_67pt5_o_err'] = I_67pt5_o_err[i]
     a['I_67pt5_e_err'] = I_67pt5_e_err[i]
     #np.savetxt('C:\\Users\\Mudit Shrivastav\\.ipython\\Science_spectra\\BetUMa\\BetUMa_9_IntensityTestBeforeEffCorr.txt', a, '%.5f', delimiter = ',')
-    np.savetxt(path + '\\' + star_name + '_' + set_number + '_Order-' + str(order_number) +'_IntensityBeforeEffCorr.txt', a, '%.3f', delimiter = '    ')
-
-
-starting_order, NumberOfPeaks, plot_flag, CD_sigma_FWHM, detector_pixels, centre_column_median = load_parameters(param_file)
+    filename = f"{star_name}_{set_number}_Order-{order_number}_IntensityBeforeEffCorr.txt"
+    output_path = os.path.join(path, filename)
+    np.savetxt(output_path, a, fmt='%.3f', delimiter='    ')
