@@ -19,6 +19,15 @@ python3 src_code/find_central_peak_science_frame_1.py
 
 echo "Step 5: Tracing orders from science frame..."
 python3 src_code/Order_Trace.py
+ 
+echo "Step 6: Scattered_Light_Substraction from files"
+python3 src_code/Scattered_Light_Substraction.py
+
+echo "Step 7: Order Extracting from files"
+python3 src_code/Order_Extraction.py
+
+echo "Step 8: Wavelength Calibration and Stokes Parameters"
+python3 src_code/Wavelength_Calibration.py
 
 echo "Data reduction pipeline completed successfully!"
 
